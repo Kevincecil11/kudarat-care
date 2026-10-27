@@ -34,7 +34,10 @@ jobs:
         run: rm -rf src/app/api
 
       - name: Build static preview
-        run: npm run build
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
         env:
           STATIC_EXPORT: "1"
           NEXT_PUBLIC_PREVIEW: "1"
@@ -43,6 +46,14 @@ jobs:
           # Public keys only (safe in the browser, protected by Row Level Security).
           NEXT_PUBLIC_SUPABASE_URL: https://hvxztbrquhebaypfibgr.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eHp0YnJxdWhlYmF5cGZpYmdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwMDQxNTYsImV4cCI6MjEwODU4MDE1Nn0.l8jpVuQ9kyJaWRBOHBtmIchYgOXrVhoj-kS21_Jz04A
+
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          [ -f build.log ] || exit 0
+          msg=$(tail -n 80 build.log | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Build log (last 80 lines)::${msg}"
 
       - name: Check out main
         uses: actions/checkout@v4
