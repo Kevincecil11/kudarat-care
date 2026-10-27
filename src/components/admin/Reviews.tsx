@@ -19,8 +19,10 @@ type Review = {
   products: { name: string } | null;
 };
 
+type MediaItem = { path: string; url: string };
+
 function Media({ db, paths }: { db: Db; paths: string[] }) {
-  const [urls, setUrls] = useState<{ path: string; url: string }[]>([]);
+  const [urls, setUrls] = useState<MediaItem[]>([]);
   const key = paths.join("|");
   useEffect(() => {
     const list = key ? key.split("|") : [];
@@ -28,7 +30,13 @@ function Media({ db, paths }: { db: Db; paths: string[] }) {
     db.storage
       .from("review-media")
       .createSignedUrls(list, 3600)
-      .then(({ data }) => setUrls((data ?? []).filter((d) => d.signedUrl).map((d, i) => ({ path: d.path ?? list[i] ?? "", url: d.signedUrl }))));
+      .then(({ data }) => {
+        const next: MediaItem[] = [];
+        (data ?? []).forEach((d, i) => {
+          if (d.signedUrl) next.push({ path: d.path ?? list[i] ?? "", url: d.signedUrl });
+        });
+        setUrls(next);
+      });
   }, [db, key]);
   if (!urls.length) return null;
   return (
@@ -69,7 +77,7 @@ export function Reviews({ db, flash }: SectionProps) {
   const setStatus = async (r: Review, status: "approved" | "rejected") => {
     const { error } = await db.from("reviews").update({ status }).eq("id", r.id);
     if (error) return flash(errText(error));
-    flash(status === "approved" ? (r.user_id && r.media_paths.length ? `Approved, bonus points added to the customer` : "Review approved") : "Review hidden");
+    flash(status === "approved" ? (r.user_id && r.media_paths.length ? "Approved, bonus points added to the customer" : "Review approved") : "Review hidden");
     await load();
   };
 

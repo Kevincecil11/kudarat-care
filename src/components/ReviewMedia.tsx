@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
+type Item = { path: string; url: string };
+
 // Approved review photos and videos live in a private bucket; we fetch short-lived links in the browser.
 export function ReviewMedia({ paths, type }: { paths: string[]; type?: "photo" | "video" }) {
-  const [items, setItems] = useState<{ path: string; url: string }[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const key = paths.join("|");
 
   useEffect(() => {
@@ -17,7 +19,11 @@ export function ReviewMedia({ paths, type }: { paths: string[]; type?: "photo" |
       .createSignedUrls(list, 60 * 60)
       .then(({ data }) => {
         if (!alive || !data) return;
-        setItems(data.filter((d) => d.signedUrl).map((d, i) => ({ path: d.path ?? list[i] ?? "", url: d.signedUrl })));
+        const next: Item[] = [];
+        data.forEach((d, i) => {
+          if (d.signedUrl) next.push({ path: d.path ?? list[i] ?? "", url: d.signedUrl });
+        });
+        setItems(next);
       });
     return () => {
       alive = false;
