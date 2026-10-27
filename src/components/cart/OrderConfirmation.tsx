@@ -28,12 +28,13 @@ export function OrderConfirmation() {
     );
   }
 
+  const preview = order.status === "preview";
   return (
     <div className="confirm card">
       <Icon name="check" size={34} />
       <h2>Thank you, {order.customer.name.split(" ")[0]}.</h2>
       <p>
-        Order <b>{order.id}</b> {order.status === "preview" ? "was placed as a preview (no payment taken)." : "is confirmed."} A confirmation will be sent to {order.customer.email}.
+        Order <b>{order.id}</b> {preview ? "was placed as a preview (no payment taken)." : "is confirmed."} We will keep you updated at {order.customer.email}.
       </p>
       <ul className="summary__lines">
         {order.lines.map((l) => (
@@ -49,7 +50,12 @@ export function OrderConfirmation() {
         Total paid <b>{formatINR(order.total)}</b>
       </p>
       <p className="summary__points">
-        <Icon name="gift" size={18} /> {order.pointsEarned} {site.rewards.name} points will be added after delivery.
+        <Icon name="gift" size={18} />{" "}
+        {preview
+          ? `A live order like this earns ${order.pointsEarned} ${site.rewards.name} points.`
+          : order.pointsEarned
+            ? `${order.pointsEarned} ${site.rewards.name} points have been added to your account.`
+            : `Sign in before your next order to earn ${site.rewards.name} points.`}
       </p>
       <div className="form__actions">
         <Link href="/account" className="btn btn-primary">

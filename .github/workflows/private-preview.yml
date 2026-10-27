@@ -40,6 +40,9 @@ jobs:
           NEXT_PUBLIC_PREVIEW: "1"
           NEXT_PUBLIC_BASE_PATH: /kudarat-care/${{ env.PREVIEW_DIR }}
           NEXT_PUBLIC_SITE_URL: https://kevincecil11.github.io/kudarat-care/${{ env.PREVIEW_DIR }}
+          # Public keys only (safe in the browser, protected by Row Level Security).
+          NEXT_PUBLIC_SUPABASE_URL: https://hvxztbrquhebaypfibgr.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2eHp0YnJxdWhlYmF5cGZpYmdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwMDQxNTYsImV4cCI6MjEwODU4MDE1Nn0.l8jpVuQ9kyJaWRBOHBtmIchYgOXrVhoj-kS21_Jz04A
 
       - name: Check out main
         uses: actions/checkout@v4

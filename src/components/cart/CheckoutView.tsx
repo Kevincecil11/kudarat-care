@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { site } from "@/lib/site";
 import { formatINR, pointsFor, shippingFor } from "@/lib/format";
 import { newOrderId, saveOrder } from "@/lib/orders";
+import { useAuth } from "@/lib/supabase/useAuth";
 import type { Order } from "@/lib/types";
 import { useCart } from "./CartProvider";
 import { Field } from "../forms/Field";
 import { Icon } from "../Icon";
+import "../backend.css";
 
 const RAZORPAY_KEY = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const livePayments = Boolean(RAZORPAY_KEY) && !site.isPreview;
@@ -33,10 +35,27 @@ function loadRazorpay(): Promise<boolean> {
 export function CheckoutView() {
   const { detailed, subtotal, clear, ready, lines } = useCart();
   const router = useRouter();
+  const { supabase, session, profile } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [balance, setBalance] = useState(0);
+  const [usePoints, setUsePoints] = useState(false);
+  const r = site.rewards;
   const shipping = shippingFor(subtotal);
-  const total = subtotal + shipping;
+  const canRedeem = livePayments && balance >= r.minRedeem;
+  const redeem = canRedeem && usePoints ? Math.min(balance, Math.floor(subtotal / r.pointValueInr)) : 0;
+  const discount = Math.floor(redeem * r.pointValueInr);
+  const total = subtotal + shipping - discount;
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    supabase
+      .from("reward_balances")
+      .select("balance")
+      .eq("user_id", session.user.id)
+      .maybeSingle()
+      .then(({ data }) => setBalance((data as { balance: number } | null)?.balance ?? 0));
+  }, [supabase, session]);
 
   if (!ready) return <div className="empty" aria-busy="true">Loading checkout…</div>;
   if (!detailed.length) {
@@ -50,15 +69,15 @@ export function CheckoutView() {
     );
   }
 
-  const complete = (customer: Order["customer"], id: string, status: Order["status"]) => {
+  const complete = (customer: Order["customer"], id: string, status: Order["status"], paid?: { total: number; pointsEarned: number }) => {
     const order: Order = {
       id,
       date: new Date().toISOString(),
       lines: detailed.map((l) => ({ slug: l.product.slug, name: l.product.name, qty: l.qty, price: l.product.price })),
       subtotal,
       shipping,
-      total,
-      pointsEarned: pointsFor(subtotal),
+      total: paid?.total ?? total,
+      pointsEarned: paid?.pointsEarned ?? pointsFor(total),
       customer,
       status,
     };
@@ -85,10 +104,15 @@ export function CheckoutView() {
     try {
       const res = await fetch("/api/razorpay/order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines, customer, address }),
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ lines, customer, address, redeemPoints: redeem > 0 }),
       });
-      if (!res.ok) throw new Error("Could not start payment");
+      if (!res.ok) {
+        const msg = ((await res.json().catch(() => ({}))) as { error?: string }).error;
+        setError(msg ?? "Something went wrong starting the payment. Please try again.");
+        setBusy(false);
+        return;
+      }
       const data: { orderId: string; amount: number; currency: string; receipt: string } = await res.json();
       if (!(await loadRazorpay()) || !window.Razorpay) throw new Error("Payment window failed to load");
       const rzp = new window.Razorpay({
@@ -106,8 +130,10 @@ export function CheckoutView() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(response),
           });
-          if (verify.ok) complete(customer, data.receipt, "paid");
-          else {
+          if (verify.ok) {
+            const v = (await verify.json()) as { orderNumber: string; pointsEarned: number; total: number };
+            complete(customer, v.orderNumber, "paid", { total: v.total, pointsEarned: v.pointsEarned });
+          } else {
             setError("We could not confirm your payment. If money was deducted, it will be refunded automatically.");
             setBusy(false);
           }
@@ -128,13 +154,13 @@ export function CheckoutView() {
           <h2 className="form__title">Contact</h2>
           <div className="form__grid">
             <Field label="Full name" htmlFor="o-name">
-              <input id="o-name" name="name" className="input" required autoComplete="name" />
+              <input id="o-name" name="name" className="input" required autoComplete="name" defaultValue={profile?.full_name ?? ""} key={`n-${profile?.id ?? ""}`} />
             </Field>
             <Field label="Mobile number" htmlFor="o-phone">
-              <input id="o-phone" name="phone" className="input" required type="tel" autoComplete="tel" pattern="[0-9+ ]{10,15}" />
+              <input id="o-phone" name="phone" className="input" required type="tel" autoComplete="tel" pattern="[0-9+ ]{10,15}" defaultValue={profile?.phone ?? ""} key={`p-${profile?.id ?? ""}`} />
             </Field>
             <Field label="Email" htmlFor="o-email" full>
-              <input id="o-email" name="email" className="input" required type="email" autoComplete="email" />
+              <input id="o-email" name="email" className="input" required type="email" autoComplete="email" defaultValue={session?.user.email ?? ""} key={`e-${profile?.id ?? ""}`} />
             </Field>
           </div>
         </section>
@@ -181,11 +207,32 @@ export function CheckoutView() {
             <dt>Shipping</dt>
             <dd>{shipping ? formatINR(shipping) : "Free"}</dd>
           </div>
+          {discount ? (
+            <div>
+              <dt>
+                {r.name} points ({redeem})
+              </dt>
+              <dd>−{formatINR(discount)}</dd>
+            </div>
+          ) : null}
           <div className="summary__total">
             <dt>Total</dt>
             <dd>{formatINR(total)}</dd>
           </div>
         </dl>
+        {canRedeem ? (
+          <label className="points-toggle">
+            <input type="checkbox" checked={usePoints} onChange={(e) => setUsePoints(e.target.checked)} />
+            <span>
+              Use my {r.name} points ({balance} available, worth {formatINR(Math.floor(balance * r.pointValueInr))})
+            </span>
+          </label>
+        ) : null}
+        {!session && livePayments ? (
+          <p className="summary__note">
+            <Link href="/account">Sign in</Link> to earn {r.name} points on this order.
+          </p>
+        ) : null}
         {error ? (
           <p className="form__error" role="alert">
             {error}
@@ -195,7 +242,7 @@ export function CheckoutView() {
           {busy ? "Processing…" : livePayments ? `Pay ${formatINR(total)}` : "Place preview order"}
         </button>
         <p className="summary__note">
-          <Icon name="shield" size={16} /> {livePayments ? "Secure payment by Razorpay. Prices include applicable taxes." : "Preview: no payment is taken. Razorpay connects in the backend phase."}
+          <Icon name="shield" size={16} /> {livePayments ? "Secure payment by Razorpay. Prices include applicable taxes." : "Preview: no payment is taken. Razorpay connects at launch."}
         </p>
       </aside>
     </form>
