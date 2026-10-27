@@ -1,28 +1,8 @@
 // SERVER ONLY helpers for Razorpay. Never import from client components.
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getProducts } from "./repository";
-import { shippingFor } from "./format";
-import type { CartLine } from "./types";
 
 export function razorpayConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
-}
-
-// Prices are always recalculated on the server from the catalogue, never trusted from the browser.
-export async function priceCart(lines: CartLine[]) {
-  const products = await getProducts();
-  const priced = lines
-    .filter((l) => Number.isInteger(l.qty) && l.qty > 0 && l.qty <= 50)
-    .map((l) => {
-      const p = products.find((x) => x.slug === l.slug);
-      if (!p || p.stock < l.qty) return null;
-      return { slug: p.slug, name: p.name, qty: l.qty, price: p.price };
-    });
-  if (!priced.length || priced.some((x) => x === null)) return null;
-  const items = priced.filter((x): x is NonNullable<typeof x> => x !== null);
-  const subtotal = items.reduce((n, i) => n + i.price * i.qty, 0);
-  const shipping = shippingFor(subtotal);
-  return { items, subtotal, shipping, total: subtotal + shipping };
 }
 
 export async function createRazorpayOrder(amountPaise: number, receipt: string, notes: Record<string, string>) {

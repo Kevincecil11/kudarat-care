@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { media, type MediaKey } from "@/lib/media";
+import { resolveMedia } from "@/lib/media-resolve";
 
 type Props = {
-  k: MediaKey;
+  k: string; // media key or image URL
   alt?: string;
   sizes?: string;
   priority?: boolean;
@@ -12,7 +12,7 @@ type Props = {
 };
 
 export function Photo({ k, alt, sizes = "(max-width: 760px) 100vw, 50vw", priority = false, className = "", focus }: Props) {
-  const m = media[k];
+  const m = resolveMedia(k, alt);
   const ref = useRef<HTMLImageElement>(null);
   const [fallback, setFallback] = useState(false);
 
@@ -22,13 +22,14 @@ export function Photo({ k, alt, sizes = "(max-width: 760px) 100vw, 50vw", priori
     if (img && img.complete && img.naturalWidth === 0) setFallback(true);
   }, []);
 
+  const single = m.small === m.large;
   return (
     <span className={`photo ${className}`.trim()} style={focus ? ({ "--focus": focus } as CSSProperties) : undefined}>
       <img
         ref={ref}
         src={fallback ? m.original : m.large}
-        srcSet={fallback ? undefined : `${m.small} 640w, ${m.large} ${m.width}w`}
-        sizes={fallback ? undefined : sizes}
+        srcSet={fallback || single ? undefined : `${m.small} 640w, ${m.large} ${m.width}w`}
+        sizes={fallback || single ? undefined : sizes}
         width={m.width}
         height={m.height}
         alt={alt ?? m.alt}

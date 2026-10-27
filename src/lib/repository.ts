@@ -1,56 +1,153 @@
 // Single data-access layer. Pages only call these functions.
-// Phase 2 swaps the seed imports for Supabase queries without touching page code.
-import { categories, products } from "./data/products";
-import { posts } from "./data/journal";
-import { reviews } from "./data/reviews";
-import { policies } from "./data/policies";
+// Reads come from Supabase when it is configured; the bundled sample data is the fallback
+// (local development without a database, or if the database is unreachable during a build).
+import { getSupabaseServer } from "./supabase/server";
+import { categories as seedCategories, products as seedProducts } from "./data/products";
+import { posts as seedPosts } from "./data/journal";
+import { reviews as seedReviews } from "./data/reviews";
+import { policies as seedPolicies } from "./data/policies";
+import type { Category, JournalPost, Policy, Product, Review } from "./types";
 
-export async function getProducts() {
-  return products;
+type Row = Record<string, unknown>;
+type Db = NonNullable<ReturnType<typeof getSupabaseServer>>;
+const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
+const num = (v: unknown, d = 0) => (typeof v === "number" ? v : Number(v ?? d) || d);
+const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : []);
+
+const toCategory = (r: Row): Category => ({ slug: str(r.slug), name: str(r.name), description: str(r.description), image: str(r.image, "botanical") });
+
+const toProduct = (r: Row): Product => ({
+  slug: str(r.slug),
+  name: str(r.name),
+  category: str((r.categories as Row | null)?.slug),
+  subCategory: str(r.sub_category),
+  shortDescription: str(r.short_description),
+  description: str(r.description),
+  keyIngredients: arr(r.key_ingredients),
+  howToUse: arr(r.how_to_use),
+  size: str(r.size),
+  mrp: num(r.mrp),
+  price: num(r.price),
+  stock: num(r.stock),
+  images: arr(r.images).length ? arr(r.images) : ["botanical"],
+  featured: Boolean(r.is_featured),
+  sample: Boolean(r.is_sample),
+});
+
+const toPost = (r: Row): JournalPost => ({
+  slug: str(r.slug),
+  title: str(r.title),
+  excerpt: str(r.excerpt),
+  category: str(r.category, "Skin") as JournalPost["category"],
+  date: str(r.published_at) || str(r.created_at).slice(0, 10),
+  readMinutes: num(r.read_minutes, 4),
+  image: str(r.cover, "botanical"),
+  author: str(r.author, "KudaratCare Journal"),
+  sections: Array.isArray(r.sections) ? (r.sections as JournalPost["sections"]) : [],
+  sample: Boolean(r.is_sample),
+});
+
+const toReview = (r: Row): Review => ({
+  id: str(r.id),
+  productSlug: str((r.products as Row | null)?.slug) || null,
+  name: str(r.name),
+  date: str(r.review_date),
+  rating: num(r.rating, 5),
+  title: str(r.title),
+  body: str(r.body),
+  mediaType: (r.media_type as Review["mediaType"]) ?? undefined,
+  media: arr(r.media_paths),
+  sample: Boolean(r.is_sample),
+});
+
+const toPolicy = (r: Row): Policy => ({
+  slug: str(r.slug),
+  title: str(r.title),
+  summary: str(r.summary),
+  sections: Array.isArray(r.sections) ? (r.sections as Policy["sections"]) : [],
+});
+
+// Run a query, fall back to sample data if Supabase is missing or the query fails.
+async function load<T>(label: string, query: (db: Db) => PromiseLike<{ data: unknown; error: unknown }>, map: (r: Row) => T, fallback: T[]): Promise<T[]> {
+  const db = getSupabaseServer();
+  if (!db) return fallback;
+  try {
+    const { data, error } = await query(db);
+    if (error || !Array.isArray(data)) throw error ?? new Error("no data");
+    return (data as Row[]).map(map);
+  } catch (e) {
+    console.warn(`[repository] ${label}: using sample data`, e);
+    return fallback;
+  }
+}
+
+const PRODUCT_COLUMNS =
+  "slug, name, sub_category, short_description, description, key_ingredients, how_to_use, size, mrp, price, stock, images, is_featured, is_sample, categories(slug)";
+
+export function getProducts(): Promise<Product[]> {
+  return load("products", (db) => db.from("products").select(PRODUCT_COLUMNS).eq("is_active", true).order("sort_order").order("name"), toProduct, seedProducts);
 }
 
 export async function getProduct(slug: string) {
-  return products.find((p) => p.slug === slug) ?? null;
+  return (await getProducts()).find((p) => p.slug === slug) ?? null;
 }
 
 export async function getFeaturedProducts() {
-  return products.filter((p) => p.featured);
+  return (await getProducts()).filter((p) => p.featured);
 }
 
 export async function getRelatedProducts(slug: string, limit = 4) {
-  const current = products.find((p) => p.slug === slug);
+  const all = await getProducts();
+  const current = all.find((p) => p.slug === slug);
   if (!current) return [];
-  return products.filter((p) => p.slug !== slug && p.category === current.category).slice(0, limit);
+  return all.filter((p) => p.slug !== slug && p.category === current.category).slice(0, limit);
 }
 
-export async function getCategories() {
-  return categories;
+export function getCategories() {
+  return load("categories", (db) => db.from("categories").select("slug, name, description, image").order("sort_order"), toCategory, seedCategories);
 }
 
 export async function getCategory(slug: string) {
-  return categories.find((c) => c.slug === slug) ?? null;
+  return (await getCategories()).find((c) => c.slug === slug) ?? null;
 }
 
 export async function getProductsByCategory(slug: string) {
-  return products.filter((p) => p.category === slug);
+  return (await getProducts()).filter((p) => p.category === slug);
 }
 
 export async function getPosts() {
+  const posts = await load(
+    "journal",
+    (db) => db.from("journal_posts").select("slug, title, excerpt, category, cover, sections, read_minutes, author, is_sample, published_at, created_at").eq("is_published", true),
+    toPost,
+    seedPosts,
+  );
   return [...posts].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function getPost(slug: string) {
-  return posts.find((p) => p.slug === slug) ?? null;
+  return (await getPosts()).find((p) => p.slug === slug) ?? null;
 }
 
 export async function getReviews(productSlug?: string) {
-  return productSlug ? reviews.filter((r) => r.productSlug === productSlug) : reviews;
+  const all = await load(
+    "reviews",
+    (db) =>
+      db
+        .from("reviews")
+        .select("id, name, rating, title, body, media_type, media_paths, is_sample, review_date, products(slug)")
+        .eq("status", "approved")
+        .order("review_date", { ascending: false }),
+    toReview,
+    seedReviews,
+  );
+  return productSlug ? all.filter((r) => r.productSlug === productSlug) : all;
 }
 
-export async function getPolicies() {
-  return policies;
+export function getPolicies() {
+  return load("policies", (db) => db.from("policies").select("slug, title, summary, sections").order("title"), toPolicy, seedPolicies);
 }
 
 export async function getPolicy(slug: string) {
-  return policies.find((p) => p.slug === slug) ?? null;
+  return (await getPolicies()).find((p) => p.slug === slug) ?? null;
 }

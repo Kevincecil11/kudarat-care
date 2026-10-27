@@ -1,10 +1,8 @@
-import type { MediaKey } from "./media";
-
 export type Category = {
   slug: string;
   name: string;
   description: string;
-  image: MediaKey;
+  image: string; // media key or image URL
 };
 
 export type Product = {
@@ -20,7 +18,7 @@ export type Product = {
   mrp: number;
   price: number;
   stock: number;
-  images: MediaKey[];
+  images: string[]; // media keys or image URLs, first one is the main photo
   featured?: boolean;
   sample: boolean;
 };
@@ -34,6 +32,7 @@ export type Review = {
   title: string;
   body: string;
   mediaType?: "photo" | "video";
+  media?: string[]; // private storage paths, shown via short-lived signed links
   sample: boolean;
 };
 
@@ -46,7 +45,7 @@ export type JournalPost = {
   category: JournalCategory;
   date: string;
   readMinutes: number;
-  image: MediaKey;
+  image: string; // media key or image URL
   author: string;
   sections: { heading: string; body: string[] }[];
   sample: boolean;
@@ -72,5 +71,5 @@ export type Order = {
   total: number;
   pointsEarned: number;
   customer: { name: string; email: string; phone: string; city: string; pincode: string };
-  status: "preview" | "pending" | "paid" | "shipped" | "delivered" | "cancelled";
+  status: "preview" | "pending" | "paid" | "packed" | "shipped" | "delivered" | "cancelled" | "refunded" | "failed";
 };
