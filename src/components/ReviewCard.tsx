@@ -1,6 +1,8 @@
 import type { Review } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { Stars } from "./Stars";
+import { ReviewMedia } from "./ReviewMedia";
+import "./backend.css";
 
 export function ReviewCard({ review, productName }: { review: Review; productName?: string }) {
   return (
@@ -11,6 +13,7 @@ export function ReviewCard({ review, productName }: { review: Review; productNam
       </div>
       <h3>{review.title}</h3>
       <p>{review.body}</p>
+      {review.media?.length ? <ReviewMedia paths={review.media} type={review.mediaType} /> : null}
       <p className="rcard__meta">
         {review.name} · <time dateTime={review.date}>{formatDate(review.date)}</time>
         {productName ? <> · {productName}</> : null}

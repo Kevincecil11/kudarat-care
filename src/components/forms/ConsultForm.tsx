@@ -2,14 +2,18 @@
 import { useState, type FormEvent } from "react";
 import { site } from "@/lib/site";
 import { whatsappLink } from "@/lib/format";
+import { clean, orNull, saveSubmission } from "@/lib/submit";
 import { Field } from "./Field";
 import { Icon } from "../Icon";
 
 export function ConsultForm() {
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError(null);
     const f = new FormData(e.currentTarget);
     const get = (k: string) => String(f.get(k) ?? "").trim();
     const text = [
@@ -22,9 +26,26 @@ export function ConsultForm() {
       `Details: ${get("details")}`,
       `Preferred time: ${get("time")}`,
     ].join("\n");
-    setMessage(text);
-    // Phase 2: also save to the `consult_requests` table before handing over to WhatsApp.
+    // Open WhatsApp straight away (browsers block pop-ups opened after a network wait).
+    const opened = Boolean(site.clinic.whatsapp);
     if (site.clinic.whatsapp) window.open(whatsappLink(site.clinic.whatsapp, text), "_blank", "noopener,noreferrer");
+    setBusy(true);
+    const res = await saveSubmission("consult_requests", {
+      name: clean(get("name"), 80),
+      age: Number(get("age")) || null,
+      phone: clean(get("phone"), 20),
+      email: orNull(get("email")),
+      concern: clean(get("concern"), 60),
+      details: clean(get("details"), 2000),
+      preferred_time: orNull(get("time")),
+      consent: true,
+    });
+    setBusy(false);
+    if (!res.ok && !opened) {
+      setError(res.message);
+      return;
+    }
+    setMessage(text);
   };
 
   if (message) {
@@ -35,11 +56,11 @@ export function ConsultForm() {
         {site.clinic.whatsapp ? (
           <p>WhatsApp has opened with your details for {site.clinic.name}. Please press send to share them.</p>
         ) : (
-          <p className="notice">Preview: the clinic WhatsApp number will be connected before launch. This is the message that will be sent to {site.clinic.name}.</p>
+          <p>Your request has reached {site.clinic.name}. The clinic will contact you on WhatsApp.</p>
         )}
         <pre className="message-preview">{message}</pre>
         <button type="button" className="btn btn-ghost" onClick={() => setMessage(null)}>
-          Edit details
+          Send another request
         </button>
       </div>
     );
@@ -49,7 +70,7 @@ export function ConsultForm() {
     <form className="card form" onSubmit={submit}>
       <div className="form__grid">
         <Field label="Full name" htmlFor="c-name">
-          <input id="c-name" name="name" className="input" required autoComplete="name" />
+          <input id="c-name" name="name" className="input" required autoComplete="name" maxLength={80} />
         </Field>
         <Field label="Age" htmlFor="c-age">
           <input id="c-age" name="age" className="input" required inputMode="numeric" pattern="[0-9]{1,3}" maxLength={3} />
@@ -89,8 +110,13 @@ export function ConsultForm() {
         <input type="checkbox" required name="consent" />
         <span>I agree to share these details with {site.clinic.name} so they can contact me about this consultation.</span>
       </label>
-      <button className="btn btn-primary" type="submit">
-        <Icon name="chat" size={18} /> Send to the clinic on WhatsApp
+      {error ? (
+        <p className="form__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <button className="btn btn-primary" type="submit" disabled={busy}>
+        <Icon name="chat" size={18} /> {busy ? "Sending…" : "Send to the clinic on WhatsApp"}
       </button>
       <p className="form__note">This form is for consultation requests, not medical emergencies.</p>
     </form>

@@ -11,7 +11,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { ReviewCard } from "@/components/ReviewCard";
 import { getCategory, getProduct, getProducts, getRelatedProducts, getReviews } from "@/lib/repository";
 import { absoluteUrl, formatINR, pointsFor } from "@/lib/format";
-import { media } from "@/lib/media";
+import { resolveMedia } from "@/lib/media-resolve";
 import { site } from "@/lib/site";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     title: p.name,
     description,
     alternates: { canonical: `/products/${p.slug}` },
-    openGraph: { title: p.name, description, images: [{ url: media[p.images[0]].large }] },
+    openGraph: { title: p.name, description, images: [{ url: resolveMedia(p.images[0]).large }] },
   };
 }
 
@@ -94,22 +94,26 @@ export default async function ProductPage({ params }: Params) {
                   <summary>Description</summary>
                   <p>{product.description}</p>
                 </details>
-                <details>
-                  <summary>Key ingredients</summary>
-                  <ul>
-                    {product.keyIngredients.map((k) => (
-                      <li key={k}>{k}</li>
-                    ))}
-                  </ul>
-                </details>
-                <details>
-                  <summary>How to use</summary>
-                  <ol>
-                    {product.howToUse.map((k) => (
-                      <li key={k}>{k}</li>
-                    ))}
-                  </ol>
-                </details>
+                {product.keyIngredients.length ? (
+                  <details>
+                    <summary>Key ingredients</summary>
+                    <ul>
+                      {product.keyIngredients.map((k, i) => (
+                        <li key={k + i}>{k}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+                {product.howToUse.length ? (
+                  <details>
+                    <summary>How to use</summary>
+                    <ol>
+                      {product.howToUse.map((k, i) => (
+                        <li key={k + i}>{k}</li>
+                      ))}
+                    </ol>
+                  </details>
+                ) : null}
                 <details>
                   <summary>Shipping & returns</summary>
                   <p>
@@ -166,7 +170,7 @@ export default async function ProductPage({ params }: Params) {
             "@type": "Product",
             name: product.name,
             description: product.description,
-            image: product.images.map((k) => media[k].large),
+            image: product.images.map((k) => resolveMedia(k).large),
             sku: product.slug,
             brand: { "@type": "Brand", name: site.name },
             category: category?.name,

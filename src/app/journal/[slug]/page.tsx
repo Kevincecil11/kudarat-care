@@ -7,7 +7,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { Photo } from "@/components/Photo";
 import { getPost, getPosts } from "@/lib/repository";
 import { absoluteUrl, formatDate } from "@/lib/format";
-import { media } from "@/lib/media";
+import { resolveMedia } from "@/lib/media-resolve";
 import { site } from "@/lib/site";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     title: post.title,
     description: post.excerpt,
     alternates: { canonical: `/journal/${post.slug}` },
-    openGraph: { type: "article", title: post.title, description: post.excerpt, publishedTime: post.date, images: [{ url: media[post.image].large }] },
+    openGraph: { type: "article", title: post.title, description: post.excerpt, publishedTime: post.date, images: [{ url: resolveMedia(post.image).large }] },
   };
 }
 
@@ -58,13 +58,13 @@ export default async function ArticlePage({ params }: Params) {
           <p className="article__meta">
             {post.author} · <time dateTime={post.date}>{formatDate(post.date)}</time> · {post.readMinutes} min read
           </p>
-          <Photo k={post.image} priority className="article__img" sizes="(max-width: 860px) 92vw, 820px" />
+          <Photo k={post.image} priority className="article__img" sizes="(max-width: 860px) 92vw, 820px" alt={post.title} />
           <p className="article__lead">{post.excerpt}</p>
-          {post.sections.map((s) => (
-            <section key={s.heading}>
-              <h2>{s.heading}</h2>
-              {s.body.map((para) => (
-                <p key={para.slice(0, 32)}>{para}</p>
+          {post.sections.map((s, i) => (
+            <section key={`${i}-${s.heading}`}>
+              {s.heading ? <h2>{s.heading}</h2> : null}
+              {s.body.map((para, j) => (
+                <p key={j}>{para}</p>
               ))}
             </section>
           ))}
@@ -96,7 +96,7 @@ export default async function ArticlePage({ params }: Params) {
           "@type": "Article",
           headline: post.title,
           description: post.excerpt,
-          image: [media[post.image].large],
+          image: [resolveMedia(post.image).large],
           datePublished: post.date,
           author: { "@type": "Organization", name: post.author },
           publisher: { "@type": "Organization", name: site.legalName },
