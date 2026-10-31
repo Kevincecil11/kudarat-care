@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { site } from "@/lib/site";
 import { useAuth } from "@/lib/supabase/useAuth";
 import { Icon, type IconName } from "../Icon";
 import { SignInForm } from "../account/SignInForm";
@@ -7,13 +8,14 @@ import { Enquiries } from "./Enquiries";
 import { Journal } from "./Journal";
 import { Orders } from "./Orders";
 import { Overview } from "./Overview";
+import { Policies } from "./Policies";
 import { Products } from "./Products";
 import { Reviews } from "./Reviews";
 import { Rewards } from "./Rewards";
 import { Settings } from "./Settings";
 import "../backend.css";
 
-type Section = "overview" | "products" | "orders" | "reviews" | "journal" | "rewards" | "enquiries" | "settings";
+type Section = "overview" | "products" | "orders" | "reviews" | "journal" | "rewards" | "enquiries" | "policies" | "settings";
 
 const sections: { id: Section; label: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", icon: "grid" },
@@ -23,13 +25,15 @@ const sections: { id: Section; label: string; icon: IconName }[] = [
   { id: "enquiries", label: "Enquiries", icon: "inbox" },
   { id: "journal", label: "Journal", icon: "book" },
   { id: "rewards", label: "KC Circle", icon: "gift" },
+  { id: "policies", label: "Policies", icon: "shield" },
   { id: "settings", label: "Site settings", icon: "settings" },
 ];
 
 export function AdminDashboard() {
-  const { supabase, user, isAdmin, profile, ready, signOut } = useAuth();
+  const { supabase, session, user, isAdmin, profile, ready, signOut } = useAuth();
   const [section, setSection] = useState<Section>("overview");
   const [saved, setSaved] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -49,7 +53,23 @@ export function AdminDashboard() {
   const flash = (msg: string) => {
     setSaved(msg);
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setSaved(null), 3200);
+    timer.current = window.setTimeout(() => setSaved(null), 3600);
+  };
+
+  // Rebuilds the live site so new products, articles, policies and settings appear (about a minute).
+  const publish = async () => {
+    if (site.isPreview) {
+      flash("On the preview, run the Private preview workflow on GitHub to refresh the pages.");
+      return;
+    }
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/publish", { method: "POST", headers: session ? { Authorization: `Bearer ${session.access_token}` } : {} });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      flash(res.ok ? "Publishing started. The website updates in about a minute." : body.error ?? "Could not publish right now");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   if (!supabase) return <div className="card empty">The admin needs the database connection. Add the Supabase keys to this build.</div>;
@@ -85,6 +105,10 @@ export function AdminDashboard() {
               <span>{s.label}</span>
             </button>
           ))}
+          <button type="button" onClick={() => void publish()} disabled={publishing}>
+            <Icon name="arrow" size={18} />
+            <span>{publishing ? "Publishing…" : "Publish changes"}</span>
+          </button>
           <button type="button" onClick={signOut}>
             <Icon name="out" size={18} />
             <span>Sign out</span>
@@ -100,6 +124,7 @@ export function AdminDashboard() {
         {section === "journal" ? <Journal {...props} /> : null}
         {section === "rewards" ? <Rewards {...props} /> : null}
         {section === "enquiries" ? <Enquiries {...props} /> : null}
+        {section === "policies" ? <Policies {...props} /> : null}
         {section === "settings" ? <Settings {...props} /> : null}
       </div>
       <div className={saved ? "toast is-on" : "toast"} role="status" aria-live="polite">

@@ -10,9 +10,12 @@ import type { Category, JournalPost, Policy, Product, Review } from "./types";
 
 type Row = Record<string, unknown>;
 type Db = NonNullable<ReturnType<typeof getSupabaseServer>>;
+export type Advisor = { name: string; title: string | null; bio: string | null; photo: string | null };
+
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
 const num = (v: unknown, d = 0) => (typeof v === "number" ? v : Number(v ?? d) || d);
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : []);
+const opt = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
 
 const toCategory = (r: Row): Category => ({ slug: str(r.slug), name: str(r.name), description: str(r.description), image: str(r.image, "botanical") });
 
@@ -66,6 +69,8 @@ const toPolicy = (r: Row): Policy => ({
   summary: str(r.summary),
   sections: Array.isArray(r.sections) ? (r.sections as Policy["sections"]) : [],
 });
+
+const toAdvisor = (r: Row): Advisor => ({ name: str(r.name), title: opt(r.title), bio: opt(r.bio), photo: opt(r.photo) });
 
 // Run a query, fall back to sample data if Supabase is missing or the query fails.
 async function load<T>(label: string, query: (db: Db) => PromiseLike<{ data: unknown; error: unknown }>, map: (r: Row) => T, fallback: T[]): Promise<T[]> {
@@ -144,10 +149,18 @@ export async function getReviews(productSlug?: string) {
   return productSlug ? all.filter((r) => r.productSlug === productSlug) : all;
 }
 
-export function getPolicies() {
-  return load("policies", (db) => db.from("policies").select("slug, title, summary, sections").order("title"), toPolicy, seedPolicies);
+const POLICY_ORDER = ["terms-and-conditions", "privacy-policy", "shipping-policy", "refund-policy"];
+
+export async function getPolicies() {
+  const list = await load("policies", (db) => db.from("policies").select("slug, title, summary, sections"), toPolicy, seedPolicies);
+  const rank = (slug: string) => (POLICY_ORDER.indexOf(slug) === -1 ? 99 : POLICY_ORDER.indexOf(slug));
+  return [...list].sort((a, b) => rank(a.slug) - rank(b.slug) || a.title.localeCompare(b.title));
 }
 
 export async function getPolicy(slug: string) {
   return (await getPolicies()).find((p) => p.slug === slug) ?? null;
+}
+
+export function getAdvisors() {
+  return load("advisors", (db) => db.from("advisors").select("name, title, bio, photo").order("sort_order"), toAdvisor, [] as Advisor[]);
 }
