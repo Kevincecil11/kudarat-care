@@ -20,6 +20,15 @@ type Row = {
   category_id: string | null;
 };
 
+function thumb(images: string[] | null | undefined): string {
+  try {
+    const first = (images ?? []).find(Boolean) ?? "botanical";
+    return resolveMedia(first).small || "";
+  } catch {
+    return "";
+  }
+}
+
 const COLS = "id, slug, name, sub_category, mrp, price, stock, is_active, is_featured, is_sample, images, category_id";
 
 export function Products({ db, flash }: SectionProps) {
@@ -27,14 +36,17 @@ export function Products({ db, flash }: SectionProps) {
   const [orig, setOrig] = useState<Record<string, string>>({});
   const [cats, setCats] = useState<Cat[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [newCat, setNewCat] = useState("");
   const [sheet, setSheet] = useState<{ products: SheetProduct[]; problems: string[] } | null>(null);
 
   const load = useCallback(async () => {
     const [p, c] = await Promise.all([db.from("products").select(COLS).order("sort_order").order("name"), db.from("categories").select("id, slug, name").order("sort_order")]);
-    const list = (p.data ?? []) as Row[];
+    const list = ((p.data ?? []) as Row[]).map((r) => ({ ...r, images: Array.isArray(r.images) ? r.images : [], sub_category: r.sub_category ?? "" }));
     setRows(list);
     setOrig(Object.fromEntries(list.map((r) => [r.id, JSON.stringify(r)])));
     setCats((c.data ?? []) as Cat[]);
+    setLoaded(true);
   }, [db]);
 
   useEffect(() => {
@@ -113,7 +125,8 @@ export function Products({ db, flash }: SectionProps) {
       });
       if (error) throw error;
       form.reset();
-      flash("Product added. It appears on the website after the next refresh.");
+      setNewCat("");
+      flash("Product added. It appears on the website after you publish changes.");
       await load();
     } catch (err) {
       flash(errText(err));
@@ -154,7 +167,6 @@ export function Products({ db, flash }: SectionProps) {
     if (!sheet?.products.length) return;
     setBusy(true);
     try {
-      // Create any categories that are new in the sheet.
       const catMap = new Map<string, string>();
       cats.forEach((c) => {
         catMap.set(c.slug, c.id);
@@ -192,8 +204,10 @@ export function Products({ db, flash }: SectionProps) {
     await load();
   };
 
+  const catValue = newCat || cats[0]?.id || "";
+
   return (
-    <>
+    <div className="admin-section">
       <h1>Products & stock</h1>
       <div className="table-wrap card">
         <table className="table">
@@ -216,11 +230,8 @@ export function Products({ db, flash }: SectionProps) {
             {rows.map((r) => (
               <tr key={r.id}>
                 <th scope="row">
-                  {r.name}
-                  <small>
-                    {r.sub_category}
-                    {r.is_sample ? " · sample" : ""}
-                  </small>
+                  <span>{r.name}</span>
+                  <small>{`${r.sub_category}${r.is_sample ? " · sample" : ""}`}</small>
                 </th>
                 <td>
                   <select className="input input--sm select-inline" aria-label={`Category for ${r.name}`} value={r.category_id ?? ""} onChange={(e) => set(r.id, { category_id: e.target.value || null })}>
@@ -244,20 +255,26 @@ export function Products({ db, flash }: SectionProps) {
                 <td>
                   <label className="switch">
                     <input type="checkbox" checked={r.is_active} onChange={(e) => set(r.id, { is_active: e.target.checked })} />
-                    <span className="sr-only">Show {r.name} on the website</span>
+                    <span className="sr-only">{`Show ${r.name} on the website`}</span>
                   </label>
                 </td>
                 <td>
                   <label className="switch">
                     <input type="checkbox" checked={r.is_featured} onChange={(e) => set(r.id, { is_featured: e.target.checked })} />
-                    <span className="sr-only">Feature {r.name} on the homepage</span>
+                    <span className="sr-only">{`Feature ${r.name} on the homepage`}</span>
                   </label>
                 </td>
                 <td>
-                  <label className="text-btn">
-                    <img src={resolveMedia(r.images[0]).small} alt="" width={32} height={32} style={{ objectFit: "cover", borderRadius: 6, verticalAlign: "middle" }} /> Change
-                    <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => void addPhotos(r, e.target.files)} />
-                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{ display: "inline-block", width: 32, height: 32, borderRadius: 6, backgroundColor: "#DCE4DC", backgroundSize: "cover", backgroundPosition: "center", backgroundImage: thumb(r.images) ? `url("${thumb(r.images)}")` : undefined }}
+                    />
+                    <label className="text-btn">
+                      <span>Change</span>
+                      <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => void addPhotos(r, e.target.files)} />
+                    </label>
+                  </div>
                 </td>
                 <td>
                   <button type="button" className="text-btn" onClick={() => void remove(r)}>
@@ -268,16 +285,15 @@ export function Products({ db, flash }: SectionProps) {
             ))}
           </tbody>
         </table>
+        {loaded && !rows.length ? <p className="muted">No products yet. Import the sheet or add one below.</p> : null}
       </div>
       <div className="admin-row-actions">
         <button type="button" className="btn btn-primary" disabled={busy || !changed.length} onClick={() => void save()}>
           {changed.length ? `Save ${changed.length} change${changed.length === 1 ? "" : "s"}` : "No changes"}
         </button>
-        {rows.some((r) => r.is_sample && r.is_active) ? (
-          <button type="button" className="btn btn-ghost" onClick={() => void hideSamples()}>
-            Hide sample products
-          </button>
-        ) : null}
+        <button type="button" className="btn btn-ghost" hidden={!rows.some((r) => r.is_sample && r.is_active)} onClick={() => void hideSamples()}>
+          Hide sample products
+        </button>
       </div>
 
       <section className="card form">
@@ -288,11 +304,11 @@ export function Products({ db, flash }: SectionProps) {
         </p>
         <input type="file" className="input" accept=".xlsx,.csv" aria-label="Product sheet" onChange={(e) => void pickSheet(e.target.files?.[0])} />
         {sheet ? (
-          <>
+          <div>
             {sheet.problems.length ? (
               <ul className="notice">
-                {sheet.problems.slice(0, 8).map((p) => (
-                  <li key={p}>{p}</li>
+                {sheet.problems.slice(0, 8).map((p, i) => (
+                  <li key={`${i}-${p}`}>{p}</li>
                 ))}
               </ul>
             ) : null}
@@ -308,13 +324,13 @@ export function Products({ db, flash }: SectionProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {sheet.products.slice(0, 50).map((p) => (
-                    <tr key={p.slug}>
+                  {sheet.products.slice(0, 50).map((p, i) => (
+                    <tr key={`${i}-${p.slug}`}>
                       <th scope="row">{p.name}</th>
                       <td>{p.category || "None"}</td>
-                      <td>{p.mrp}</td>
-                      <td>{p.price}</td>
-                      <td>{p.stock}</td>
+                      <td>{String(p.mrp)}</td>
+                      <td>{String(p.price)}</td>
+                      <td>{String(p.stock)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -322,13 +338,13 @@ export function Products({ db, flash }: SectionProps) {
             </div>
             <div className="admin-row-actions">
               <button type="button" className="btn btn-primary" disabled={busy || !sheet.products.length} onClick={() => void importSheet()}>
-                Import {sheet.products.length} products
+                {`Import ${sheet.products.length} products`}
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => setSheet(null)}>
                 Cancel
               </button>
             </div>
-          </>
+          </div>
         ) : null}
       </section>
 
@@ -341,7 +357,8 @@ export function Products({ db, flash }: SectionProps) {
           </div>
           <div className="field">
             <label htmlFor="ap-cat">Category</label>
-            <select id="ap-cat" name="category" className="input" key={cats[0]?.id ?? "none"} defaultValue={cats[0]?.id ?? ""}>
+            <select id="ap-cat" name="category" className="input" value={catValue} onChange={(e) => setNewCat(e.target.value)}>
+              <option value="">None</option>
               {cats.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -398,6 +415,6 @@ export function Products({ db, flash }: SectionProps) {
           {busy ? "Saving…" : "Add product"}
         </button>
       </form>
-    </>
+    </div>
   );
 }
