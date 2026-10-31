@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHero } from "@/components/PageHero";
 import { getPolicies, getPolicy } from "@/lib/repository";
+import { paragraphs } from "@/lib/site";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -35,10 +36,14 @@ export default async function PolicyPage({ params }: Params) {
             ))}
           </nav>
           <div className="article article--policy">
-            {policy.sections.map((s) => (
-              <section key={s.heading}>
-                <h2>{s.heading}</h2>
-                <p>{s.body}</p>
+            {policy.sections.map((s, i) => (
+              <section key={`${i}-${s.heading}`}>
+                {s.heading ? <h2>{s.heading}</h2> : null}
+                {paragraphs(s.body).map((p, j) => (
+                  <p key={j} style={{ whiteSpace: "pre-line" }}>
+                    {p}
+                  </p>
+                ))}
               </section>
             ))}
           </div>

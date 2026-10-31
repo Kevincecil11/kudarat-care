@@ -13,4 +13,29 @@ const nextConfig = {
   ...(isStaticExport ? { output: "export", trailingSlash: true } : {}),
 };
 
-export default nextConfig;
+// Business settings and KC Circle rules edited in the admin are read once per build and baked in,
+// so every page and component (server and browser) uses the same values. "Publish changes" rebuilds.
+async function loadLiveSettings() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) return {};
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const get = async (path) => {
+    const res = await fetch(`${url}/rest/v1/${path}`, { headers });
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows[0] ?? null : null;
+  };
+  try {
+    const [settings, rewards] = await Promise.all([get("site_settings?id=eq.1&select=*"), get("reward_rules?id=eq.1&select=*")]);
+    return { settings, rewards };
+  } catch (e) {
+    console.warn("[next.config] could not load live settings, using defaults:", e?.message ?? e);
+    return {};
+  }
+}
+
+export default async function config() {
+  const live = await loadLiveSettings();
+  return { ...nextConfig, env: { NEXT_PUBLIC_SITE_SETTINGS: JSON.stringify(live) } };
+}

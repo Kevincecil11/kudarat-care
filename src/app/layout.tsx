@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     description: site.description,
   },
   twitter: { card: "summary_large_image" },
-  robots: site.isPreview
+  robots: site.noindex
     ? { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } }
     : { index: true, follow: true },
   formatDetection: { telephone: false },
@@ -42,6 +42,7 @@ const gaId = process.env.NEXT_PUBLIC_GA_ID;
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const products = await getProducts();
+  const address = site.contact.address;
   return (
     <html lang="en-IN" className={`${heading.variable} ${body.variable}`}>
       <body>
@@ -53,10 +54,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             name: site.legalName,
             url: site.url,
             description: site.description,
+            ...(site.contact.email ? { email: site.contact.email } : {}),
+            ...(site.contact.phone ? { telephone: site.contact.phone } : {}),
+            ...(address ? { address: { "@type": "PostalAddress", streetAddress: address, addressCountry: "IN" } } : {}),
             sameAs: [site.social.instagram, site.social.youtube].filter(Boolean),
           }}
         />
-        {gaId && !site.isPreview ? (
+        {gaId && !site.noindex ? (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
             <Script id="ga4" strategy="afterInteractive">
